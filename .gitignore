@@ -1,0 +1,25 @@
+# Audio files
+*.flac
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.ogg
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
