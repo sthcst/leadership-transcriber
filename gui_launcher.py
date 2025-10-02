@@ -11,6 +11,8 @@ import threading
 import os
 import sys
 from pathlib import Path
+import wave
+import contextlib
 
 class TranscriberLauncher:
     def __init__(self, root):
@@ -23,6 +25,7 @@ class TranscriberLauncher:
         self.whisper_model = tk.StringVar(value="base")
         self.hf_token = tk.StringVar()
         self.mode = tk.StringVar(value="full")  # "full" or "whisper-only"
+        self.audio_info = tk.StringVar(value="")
         
         # Check for existing HF_TOKEN
         existing_token = os.getenv("HF_TOKEN")
@@ -74,39 +77,146 @@ class TranscriberLauncher:
         self.file_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(10, 0))
         ttk.Button(file_frame, text="Browse...", command=self.browse_file).grid(row=0, column=1, padx=(5, 0))
         
+        # Audio info display
+        self.audio_info_label = ttk.Label(main_frame, textvariable=self.audio_info, font=("Arial", 9), foreground="gray")
+        self.audio_info_label.grid(row=4, column=1, sticky=tk.W, padx=(10, 0), pady=(0, 5))
+        
         # Model selection
-        ttk.Label(main_frame, text="Whisper Model:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Whisper Model:").grid(row=5, column=0, sticky=tk.W, pady=5)
         model_combo = ttk.Combobox(main_frame, textvariable=self.whisper_model, 
                                   values=["tiny", "base", "small", "medium", "large"],
                                   state="readonly", width=15)
-        model_combo.grid(row=4, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        model_combo.grid(row=5, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        model_combo.bind('<<ComboboxSelected>>', self.on_model_change)
         
         # Progress bar
         self.progress_var = tk.StringVar(value="Ready to transcribe")
-        ttk.Label(main_frame, text="Status:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Status:").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.status_label = ttk.Label(main_frame, textvariable=self.progress_var)
-        self.status_label.grid(row=5, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        self.status_label.grid(row=6, column=1, sticky=tk.W, padx=(10, 0), pady=5)
         
         self.progress_bar = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        self.progress_bar.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         
         # Transcribe button
         self.transcribe_btn = ttk.Button(main_frame, text="🎙️ Start Transcription", 
                                         command=self.start_transcription)
-        self.transcribe_btn.grid(row=7, column=0, columnspan=3, pady=20)
+        self.transcribe_btn.grid(row=8, column=0, columnspan=3, pady=20)
         
         # Results area
-        ttk.Label(main_frame, text="Results:", font=("Arial", 12, "bold")).grid(row=8, column=0, sticky=tk.W, pady=(20, 5))
+        ttk.Label(main_frame, text="Results:", font=("Arial", 12, "bold")).grid(row=9, column=0, sticky=tk.W, pady=(20, 5))
         
         # Results text with scrollbar
         self.results_text = scrolledtext.ScrolledText(main_frame, height=15, wrap=tk.WORD)
-        self.results_text.grid(row=9, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        main_frame.rowconfigure(9, weight=1)
+        self.results_text.grid(row=10, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        main_frame.rowconfigure(10, weight=1)
         
         # Save button
         self.save_btn = ttk.Button(main_frame, text="💾 Save Results", 
                                   command=self.save_results, state="disabled")
-        self.save_btn.grid(row=10, column=0, columnspan=3, pady=10)
+        self.save_btn.grid(row=11, column=0, columnspan=3, pady=10)
+    
+    def get_audio_duration(self, audio_file):
+        """Get audio duration in seconds using various methods"""
+        try:
+            # Try using ffprobe first (most accurate)
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+                '-of', 'csv=p=0', audio_file
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                return float(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+            pass
+        
+        try:
+            # Try using wave module for WAV files
+            with wave.open(audio_file, 'rb') as wav_file:
+                frames = wav_file.getnframes()
+                rate = wav_file.getframerate()
+                return frames / float(rate)
+        except:
+            pass
+        
+        # If all else fails, estimate based on file size (rough approximation)
+        try:
+            file_size_mb = os.path.getsize(audio_file) / (1024 * 1024)
+            # Rough estimate: 1MB ≈ 1 minute for compressed audio
+            return file_size_mb * 60
+        except:
+            return None
+    
+    def estimate_processing_time(self, duration_seconds, model, mode):
+        """Estimate processing time based on audio duration, model, and mode"""
+        if not duration_seconds:
+            return "Unknown"
+        
+        duration_minutes = duration_seconds / 60
+        
+        # Processing time multipliers (how many times longer than audio duration)
+        whisper_multipliers = {
+            "tiny": 0.05,   # Very fast
+            "base": 0.1,    # Fast  
+            "small": 0.2,   # Medium
+            "medium": 0.4,  # Slower
+            "large": 0.6    # Slowest
+        }
+        
+        whisper_time = duration_minutes * whisper_multipliers.get(model, 0.1)
+        
+        if mode == "whisper-only":
+            total_time = whisper_time
+        else:  # full mode
+            # Speaker diarization adds significant overhead
+            diarization_time = duration_minutes * 0.3  # ~30% of audio duration
+            total_time = whisper_time + diarization_time
+        
+        # Format time nicely
+        if total_time < 1:
+            return f"~{int(total_time * 60)} seconds"
+        elif total_time < 60:
+            return f"~{int(total_time)} minutes"
+        else:
+            hours = int(total_time // 60)
+            minutes = int(total_time % 60)
+            return f"~{hours}h {minutes}m"
+    
+    def update_audio_info(self):
+        """Update the audio information display"""
+        if not self.selected_file.get():
+            self.audio_info.set("")
+            return
+        
+        audio_file = self.selected_file.get()
+        duration = self.get_audio_duration(audio_file)
+        
+        if duration:
+            # Format duration
+            if duration < 60:
+                duration_str = f"{int(duration)} seconds"
+            elif duration < 3600:
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                hours = int(duration // 3600)
+                minutes = int((duration % 3600) // 60)
+                duration_str = f"{hours}h {minutes}m"
+            
+            # Estimate processing times
+            model = self.whisper_model.get()
+            whisper_time = self.estimate_processing_time(duration, model, "whisper-only")
+            full_time = self.estimate_processing_time(duration, model, "full")
+            
+            info_text = f"Duration: {duration_str} | Est. time - Whisper-only: {whisper_time}, Full: {full_time}"
+            self.audio_info.set(info_text)
+        else:
+            self.audio_info.set("Duration: Unknown (install FFmpeg for accurate timing)")
+    
+    def on_model_change(self, event=None):
+        """Handle model selection change"""
+        self.update_audio_info()
     
     def on_mode_change(self):
         """Handle mode change between full and whisper-only"""
@@ -120,6 +230,7 @@ class TranscriberLauncher:
             self.help_btn.grid()
         
         self.check_ready_state()
+        self.update_audio_info()
     
     def check_ready_state(self):
         """Check if ready to transcribe and update UI"""
@@ -165,6 +276,7 @@ WHISPER-ONLY MODE doesn't need a token:
         
         if filename:
             self.selected_file.set(filename)
+            self.update_audio_info()
             self.check_ready_state()
     
     def start_transcription(self):
