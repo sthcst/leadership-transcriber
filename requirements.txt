@@ -2,3 +2,5 @@ openai-whisper
 pyannote.audio
 ffmpeg-python
 torch
+pyinstaller
+pillow
