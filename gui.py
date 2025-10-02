@@ -72,54 +72,76 @@ class TranscriberGUI:
                                   state="readonly", width=15)
         model_combo.grid(row=3, column=1, sticky=tk.W, padx=(10, 0), pady=5)
         
+        # Processing mode selection
+        self.processing_mode = tk.StringVar(value="full")
+        ttk.Label(main_frame, text="Mode:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        mode_frame = ttk.Frame(main_frame)
+        mode_frame.grid(row=4, column=1, columnspan=2, sticky=tk.W, padx=(10, 0), pady=5)
+        
+        ttk.Radiobutton(mode_frame, text="Full (Transcription + Speaker ID)", 
+                       variable=self.processing_mode, value="full").grid(row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(mode_frame, text="Whisper Only (No HF Token Required)", 
+                       variable=self.processing_mode, value="whisper_only").grid(row=1, column=0, sticky=tk.W)
+        
+        # Bind mode change to update requirements
+        self.processing_mode.trace('w', self.on_mode_change)
+        
         # Progress bar
         self.progress_var = tk.StringVar(value="Ready to transcribe")
-        ttk.Label(main_frame, text="Status:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Status:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.status_label = ttk.Label(main_frame, textvariable=self.progress_var)
-        self.status_label.grid(row=4, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        self.status_label.grid(row=5, column=1, sticky=tk.W, padx=(10, 0), pady=5)
         
         self.progress_bar = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress_bar.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        self.progress_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         
         # Transcribe button
         self.transcribe_btn = ttk.Button(main_frame, text="🎙️ Start Transcription", 
                                         command=self.start_transcription)
-        self.transcribe_btn.grid(row=6, column=0, columnspan=3, pady=20)
+        self.transcribe_btn.grid(row=7, column=0, columnspan=3, pady=20)
         
         # Results area
-        ttk.Label(main_frame, text="Results:", font=("Arial", 12, "bold")).grid(row=7, column=0, sticky=tk.W, pady=(20, 5))
+        ttk.Label(main_frame, text="Results:", font=("Arial", 12, "bold")).grid(row=8, column=0, sticky=tk.W, pady=(20, 5))
         
         # Results text with scrollbar
         self.results_text = scrolledtext.ScrolledText(main_frame, height=15, wrap=tk.WORD)
-        self.results_text.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        main_frame.rowconfigure(8, weight=1)
+        self.results_text.grid(row=9, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        main_frame.rowconfigure(9, weight=1)
         
         # Save button
         self.save_btn = ttk.Button(main_frame, text="💾 Save Results", 
                                   command=self.save_results, state="disabled")
-        self.save_btn.grid(row=9, column=0, columnspan=3, pady=10)
+        self.save_btn.grid(row=10, column=0, columnspan=3, pady=10)
+    
+    def on_mode_change(self, *args):
+        """Handle processing mode change"""
+        self.check_ready_state()
     
     def check_hf_token(self):
         """Check if HF token is available and show warning if not"""
-        if not self.hf_token.get():
-            self.progress_var.set("⚠️  Please enter your Hugging Face token to continue")
-            self.transcribe_btn.config(state="disabled")
-        else:
-            self.progress_var.set("Ready to transcribe")
-            self.transcribe_btn.config(state="normal")
+        self.check_ready_state()
     
     def show_token_help(self):
         """Show help dialog for HF token"""
-        help_text = """Hugging Face Token Required:
+        help_text = """Hugging Face Token (Optional):
 
+🎙️ WHISPER ONLY MODE:
+   • No token required
+   • Basic transcription only
+   • No speaker identification
+
+🎭 FULL MODE (Recommended):
+   • Requires HuggingFace token (free)
+   • Transcription + Speaker identification
+   • Shows who said what
+
+To get a token:
 1. Sign up at https://huggingface.co/ (free)
 2. Accept model terms for 'pyannote/speaker-diarization'
 3. Go to Settings → Access Tokens
-4. Create a new token and copy it here
-
-This token is needed for speaker diarization functionality."""
+4. Create a new token and paste it above"""
         
-        messagebox.showinfo("Hugging Face Token Help", help_text)
+        messagebox.showinfo("Processing Modes Help", help_text)
     
     def browse_file(self):
         """Open file dialog to select audio file"""
@@ -139,28 +161,36 @@ This token is needed for speaker diarization functionality."""
     
     def check_ready_state(self):
         """Check if ready to transcribe and update UI"""
-        if not self.hf_token.get():
-            self.progress_var.set("⚠️  Please enter your Hugging Face token")
-            self.transcribe_btn.config(state="disabled")
-        elif not self.selected_file.get():
+        mode = self.processing_mode.get()
+        
+        if not self.selected_file.get():
             self.progress_var.set("⚠️  Please select an audio file")
             self.transcribe_btn.config(state="disabled")
+        elif mode == "full" and not self.hf_token.get():
+            self.progress_var.set("⚠️  Please enter your Hugging Face token for speaker identification")
+            self.transcribe_btn.config(state="disabled")
         else:
-            self.progress_var.set("Ready to transcribe")
+            if mode == "whisper_only":
+                self.progress_var.set("Ready to transcribe (Whisper only - no speaker identification)")
+            else:
+                self.progress_var.set("Ready to transcribe with speaker identification")
             self.transcribe_btn.config(state="normal")
     
     def start_transcription(self):
         """Start transcription in a separate thread"""
-        if not self.hf_token.get():
-            messagebox.showerror("Error", "Please enter your Hugging Face token")
+        mode = self.processing_mode.get()
+        
+        if mode == "full" and not self.hf_token.get():
+            messagebox.showerror("Error", "Please enter your Hugging Face token for full mode")
             return
         
         if not self.selected_file.get():
             messagebox.showerror("Error", "Please select an audio file")
             return
         
-        # Set HF_TOKEN environment variable
-        os.environ["HF_TOKEN"] = self.hf_token.get()
+        # Set HF_TOKEN environment variable if provided
+        if self.hf_token.get():
+            os.environ["HF_TOKEN"] = self.hf_token.get()
         
         # Disable UI during transcription
         self.transcribe_btn.config(state="disabled")
@@ -198,12 +228,36 @@ This token is needed for speaker diarization functionality."""
             
             # Import transcription functionality (lazy loading to avoid slow startup)
             try:
-                from transcribe import main as transcribe_main
+                mode = self.processing_mode.get()
                 
-                # Call the existing main function and capture output
-                with contextlib.redirect_stdout(output_buffer):
-                    with contextlib.redirect_stderr(output_buffer):
-                        transcribe_main(audio_file, model_size)
+                if mode == "whisper_only":
+                    # Whisper-only transcription (no speaker diarization)
+                    import whisper
+                    
+                    self.root.after(0, lambda: update_progress("Loading Whisper model..."))
+                    model = whisper.load_model(model_size)
+                    
+                    self.root.after(0, lambda: update_progress("Transcribing audio..."))
+                    result = model.transcribe(audio_file)
+                    
+                    # Format output similar to full mode
+                    transcript_text = "===== WHISPER-ONLY TRANSCRIPT =====\n\n"
+                    transcript_text += result["text"]
+                    transcript_text += "\n\n===== END TRANSCRIPT =====\n"
+                    transcript_text += "\nNote: This is a Whisper-only transcription without speaker identification.\n"
+                    transcript_text += "For speaker identification, use 'Full Mode' with a HuggingFace token."
+                    
+                    output_buffer.write(transcript_text)
+                    
+                else:
+                    # Full transcription with speaker diarization
+                    from transcribe import main as transcribe_main
+                    
+                    # Call the existing main function and capture output
+                    with contextlib.redirect_stdout(output_buffer):
+                        with contextlib.redirect_stderr(output_buffer):
+                            transcribe_main(audio_file, model_size)
+                            
             except ImportError as e:
                 raise Exception(f"Failed to import transcription modules: {e}")
             except Exception as e:

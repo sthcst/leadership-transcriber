@@ -24,20 +24,52 @@ def build_app():
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--name=Leadership-Transcriber",
-        "--onefile",                    # Single executable
+        "--onedir",                     # Directory bundle (better for ML libraries)
         "--windowed",                   # No console window (GUI only)
         "--icon=icon.ico",             # App icon (optional)
         "--add-data=utils.py;.",       # Include utils.py
         "--add-data=transcribe.py;.",  # Include transcribe.py
+        
+        # Whisper dependencies
         "--hidden-import=whisper",
-        "--hidden-import=pyannote.audio",
-        "--hidden-import=torch",
-        "--hidden-import=torchaudio",
-        "--hidden-import=speechbrain",
+        "--hidden-import=whisper.model",
+        "--hidden-import=whisper.audio",
+        "--hidden-import=whisper.decoding",
+        "--hidden-import=whisper.tokenizer",
         "--collect-all=whisper",
+        
+        # PyAnnote dependencies  
+        "--hidden-import=pyannote.audio",
+        "--hidden-import=pyannote.core", 
+        "--hidden-import=pyannote.database",
+        "--hidden-import=pyannote.metrics",
+        "--hidden-import=pyannote.pipeline",
         "--collect-all=pyannote",
+        
+        # PyTorch dependencies
+        "--hidden-import=torch",
+        "--hidden-import=torchaudio", 
+        "--hidden-import=torchvision",
         "--collect-all=torch",
         "--collect-all=torchaudio",
+        
+        # SpeechBrain dependencies
+        "--hidden-import=speechbrain",
+        "--collect-all=speechbrain",
+        
+        # Other ML dependencies
+        "--hidden-import=numpy",
+        "--hidden-import=scipy",
+        "--hidden-import=librosa",
+        "--hidden-import=sklearn",
+        "--hidden-import=transformers",
+        "--hidden-import=huggingface_hub",
+        "--collect-all=transformers",
+        "--collect-all=huggingface_hub",
+        
+        # FFmpeg
+        "--collect-all=ffmpeg",
+        
         "gui.py"
     ]
     
@@ -51,12 +83,13 @@ def build_app():
     try:
         subprocess.run(cmd, check=True)
         print("✅ Build completed successfully!")
-        print(f"📦 Executable created: dist/Leadership-Transcriber{'.exe' if sys.platform == 'win32' else ''}")
+        print(f"📦 Application created: dist/Leadership-Transcriber/")
+        print(f"   Run: dist/Leadership-Transcriber/Leadership-Transcriber{'.exe' if sys.platform == 'win32' else ''}")
         print()
         print("📋 Next steps:")
-        print("1. Test the executable in dist/ folder")
-        print("2. The app is fully standalone - no Python required!")
-        print("3. Share the executable with users")
+        print("1. Test the executable in dist/Leadership-Transcriber/ folder")
+        print("2. The entire folder is standalone - no Python required!")
+        print("3. Share the entire dist/Leadership-Transcriber/ folder with users")
         
     except subprocess.CalledProcessError as e:
         print(f"❌ Build failed: {e}")
@@ -112,9 +145,10 @@ if __name__ == "__main__":
     
     if success:
         print("\n🎉 Build completed! Your desktop app is ready.")
-        print("\n📁 Files created:")
-        print(f"   - dist/Leadership-Transcriber{'.exe' if sys.platform == 'win32' else ''}")
-        print("\n🚀 You can now distribute this single file to users!")
+        print("\n📁 Application folder created:")
+        print(f"   - dist/Leadership-Transcriber/")
+        print(f"   - Main executable: Leadership-Transcriber{'.exe' if sys.platform == 'win32' else ''}")
+        print("\n🚀 You can now distribute the entire Leadership-Transcriber folder to users!")
     else:
         print("\n❌ Build failed. Check the error messages above.")
         sys.exit(1)
