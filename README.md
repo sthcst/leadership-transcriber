@@ -84,6 +84,21 @@ Whisper requires FFmpeg.
 1. Sign up at [huggingface.co](https://huggingface.co/) (free).
 2. Accept model terms for `pyannote/speaker-diarization`.
 3. Copy your access token from your account settings.
+4. Set it as an environment variable:
+
+**Windows (PowerShell):**
+```powershell
+$env:HF_TOKEN = "your_token_here"
+# Or permanently:
+[System.Environment]::SetEnvironmentVariable("HF_TOKEN", "your_token_here", "User")
+```
+
+**macOS/Linux (bash/zsh):**
+```bash
+export HF_TOKEN="your_token_here"
+# Or permanently add to ~/.bashrc or ~/.zshrc:
+echo 'export HF_TOKEN="your_token_here"' >> ~/.bashrc
+```
 
 ---
 
@@ -94,13 +109,14 @@ Put your audio file in the `audio/` folder. Example: `audio/meeting1.mp3`
 Run:
 
 ```bash
-python transcribe.py audio/meeting1.mp3 --hf_token YOUR_HF_TOKEN --whisper_model base
+python transcribe.py audio/meeting1.mp3 --whisper_model base
 ```
 
 Options:
 
-* `--hf_token` = your Hugging Face token
 * `--whisper_model` = tiny | base | small | medium | large
+
+**Note:** The script automatically detects your operating system and applies appropriate optimizations for Windows or macOS/Linux.
 
 ---
 
@@ -118,7 +134,19 @@ You’ll see a combined transcript + speaker diarization:
 
 ---
 
-## 📝 Notes
+## � Platform Compatibility
+
+This project works on:
+
+* ✅ **Windows** (tested on Windows 11)
+* ✅ **macOS** (Intel and Apple Silicon)
+* ✅ **Linux** (Ubuntu, Debian, etc.)
+
+The script automatically detects your operating system and applies platform-specific optimizations. No manual configuration needed!
+
+---
+
+## �📝 Notes
 
 * Whisper provides transcription only; Pyannote adds speaker diarization.
 * Current merging logic is **basic** — transcript sentences are assigned to speaker turns.

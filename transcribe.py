@@ -2,26 +2,29 @@ import whisper
 from pyannote.audio import Pipeline
 import argparse
 import utils
-import os  # <-- you need this to use os.getenv
+import os
+import platform
 
-# Set environment variables to avoid symlink issues on Windows
-os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "COPY"
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+# Apply Windows-specific workarounds only on Windows
+if platform.system() == "Windows":
+    # Set environment variables to avoid symlink issues on Windows
+    os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "COPY"
+    os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-# Monkey patch to disable symlink usage completely
-import speechbrain.utils.fetching as sb_fetch
-from speechbrain.utils.fetching import LocalStrategy
+    # Monkey patch to disable symlink usage completely on Windows
+    import speechbrain.utils.fetching as sb_fetch
+    from speechbrain.utils.fetching import LocalStrategy
 
-# Force the fetching to use COPY strategy
-original_fetch = sb_fetch.fetch
-def patched_fetch(*args, **kwargs):
-    if 'local_strategy' in kwargs:
-        kwargs['local_strategy'] = LocalStrategy.COPY
-    else:
-        kwargs['local_strategy'] = LocalStrategy.COPY
-    return original_fetch(*args, **kwargs)
+    # Force the fetching to use COPY strategy on Windows
+    original_fetch = sb_fetch.fetch
+    def patched_fetch(*args, **kwargs):
+        if 'local_strategy' in kwargs:
+            kwargs['local_strategy'] = LocalStrategy.COPY
+        else:
+            kwargs['local_strategy'] = LocalStrategy.COPY
+        return original_fetch(*args, **kwargs)
 
-sb_fetch.fetch = patched_fetch
+    sb_fetch.fetch = patched_fetch
 
 def main(audio_file, whisper_model_size="base"):
     hf_token = os.getenv("HF_TOKEN")
